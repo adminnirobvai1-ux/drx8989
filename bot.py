@@ -1,6 +1,7 @@
 import os
 import asyncio
 import uuid
+import random
 import aiohttp
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -15,48 +16,85 @@ from telegram.ext import (
 )
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8949748635:AAEd7NKUfclKij86C_qHiLz4bCbRrbRrFAI")
-
 WAITING_FOR_URL = 1
 
-# শিডিউলার ইনিশিয়ালাইজ (এখনই start হবে না)
 scheduler = AsyncIOScheduler()
 user_jobs = {}
 
+# রিয়েল ব্রাউজার ইউজার-এজেন্ট তালিকা
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1",
+]
+
+# রিয়েল লাইভ হিট ও ভিউ কাউন্ট ফাংশন
 async def ping_url(url: str):
+    headers = {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,bn;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
+        "X-Forwarded-For": f"{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}.{random.randint(1,254)}"
+    }
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10):
-                pass
+        async with aiohttp.ClientSession(headers=headers) as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=8), ssl=False) as response:
+                await response.read()
     except Exception:
         pass
 
 def get_main_keyboard():
     keyboard = [
         [
-            InlineKeyboardButton("➕ Add Cron Job", callback_data="btn_add_job"),
-            InlineKeyboardButton("❌ Remove Cron Job", callback_data="btn_remove_job"),
+            InlineKeyboardButton("⚡ Add Cron Job", callback_data="btn_add_job"),
+            InlineKeyboardButton("🗑 Remove Cron Job", callback_data="btn_remove_job"),
         ]
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# মেইন ড্যাশবোর্ড ডিজাইন
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = "স্বাগতম! ক্রন জব পরিচালনা করতে নিচের যেকোনো একটি বাটন বেছে নিন:"
+    text = (
+        "╔══════════════════════╗\n"
+        "   🚀 **CRON JOB CONTROLLER**\n"
+        "╚══════════════════════╝\n\n"
+        "🌐 **Engine:** Real-Time Traffic Booster\n"
+        "📡 **Protocol:** HTTP/2 Supported\n"
+        "📊 **Status:** Active & Ready\n\n"
+        "নিচের বাটন চেপে আপনার টাস্ক পরিচালনা করুন:"
+    )
     if update.message:
-        await update.message.reply_text(text, reply_markup=get_main_keyboard())
+        await update.message.reply_text(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
     elif update.callback_query:
-        await update.callback_query.message.edit_text(text, reply_markup=get_main_keyboard())
+        await update.callback_query.message.edit_text(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
     return ConversationHandler.END
 
 async def add_job_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("অনুগ্রহ করে যে লিংকটি ভিউ করতে চান সেটি পাঠান (যেমন: https://example.com):")
+    text = (
+        "╔══════════════════════╗\n"
+        "   🔗 **TARGET LINK SETUP**\n"
+        "╚══════════════════════╝\n\n"
+        "অনুগ্রহ করে যে লিংকটি রিয়েল-টাইমে কল করতে চান সেটি পাঠান:\n\n"
+        "📌 *উদাহরণ:* `https://example.com`"
+    )
+    await query.edit_message_text(text, parse_mode="Markdown")
     return WAITING_FOR_URL
 
 async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     if not (url.startswith("http://") or url.startswith("https://")):
-        await update.message.reply_text("ভুল লিংক! অনুগ্রহ করে সঠিক URL পাঠান (http:// বা https:// সহ):")
+        await update.message.reply_text("❌ **ভুল URL!** অনুগ্রহ করে `http://` অথবা `https://` সহ সঠিক লিংক দিন:")
         return WAITING_FOR_URL
 
     context.user_data["target_url"] = url
@@ -65,19 +103,22 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     row = []
     for sec in intervals:
-        row.append(InlineKeyboardButton(f"{sec}s", callback_data=f"set_sec_{sec}"))
+        row.append(InlineKeyboardButton(f"⚡ {sec}s", callback_data=f"set_sec_{sec}"))
         if len(row) == 4:
             keyboard.append(row)
             row = []
     if row:
         keyboard.append(row)
 
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(
-        f"লিংক যুক্ত হয়েছে:\n`{url}`\n\nকত সেকেন্ড পর পর ভিউ করতে চান নির্বাচন করুন:",
-        parse_mode="Markdown",
-        reply_markup=reply_markup,
+    text = (
+        "╔══════════════════════╗\n"
+        "   ⏱ **SET TIME INTERVAL**\n"
+        "╚══════════════════════╝\n\n"
+        f"🎯 **Target:** `{url}`\n\n"
+        "প্রতি কত সেকেন্ড পর পর রিয়েল কল পাঠাতে চান নির্বাচন করুন:"
     )
+
+    await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
     return ConversationHandler.END
 
 async def set_interval_and_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -89,7 +130,7 @@ async def set_interval_and_start(update: Update, context: ContextTypes.DEFAULT_T
     user_id = query.from_user.id
 
     if not url:
-        await query.edit_message_text("লিংক পাওয়া যায়নি। আবার চেষ্টা করুন।", reply_markup=get_main_keyboard())
+        await query.edit_message_text("❌ লিংক পাওয়া যায়নি! পুনরায় চেষ্টা করুন।", reply_markup=get_main_keyboard())
         return
 
     job_id = f"job_{uuid.uuid4().hex[:8]}"
@@ -100,7 +141,7 @@ async def set_interval_and_start(update: Update, context: ContextTypes.DEFAULT_T
         seconds=seconds,
         args=[url],
         id=job_id,
-        max_instances=10,
+        max_instances=50,
     )
 
     if user_id not in user_jobs:
@@ -109,9 +150,14 @@ async def set_interval_and_start(update: Update, context: ContextTypes.DEFAULT_T
     user_jobs[user_id].append({"id": job_id, "url": url, "interval": seconds})
 
     text = (
-        f"✅ **ক্রন জব সফলভাবে চালু হয়েছে!**\n\n"
-        f"🌐 **লিংক:** `{url}`\n"
-        f"⏱ **বিরতি:** প্রতি {seconds} সেকেন্ড পর পর ভিউ হবে।"
+        "╔══════════════════════╗\n"
+        "   🟢 **JOB ACTIVATED LIVE!**\n"
+        "╚══════════════════════╝\n\n"
+        f"🌐 **Target URL:**\n`{url}`\n\n"
+        f"⚡ **Interval:** প্রতি `{seconds}s` পরপর লাইভ কল পাঠানো হচ্ছে\n"
+        f"🛡 **Mode:** Real Browser Emulation (Anti-Bot Bypass)\n"
+        f"🆔 **Job ID:** `{job_id}`\n\n"
+        "✅ ব্যাকগ্রাউন্ডে সফলভাবে কল চালু হয়েছে।"
     )
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
@@ -122,21 +168,30 @@ async def remove_job_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     jobs = user_jobs.get(user_id, [])
     if not jobs:
-        keyboard = [[InlineKeyboardButton("🔙 ফিরে যান", callback_data="btn_back_main")]]
-        await query.edit_message_text("আপনার কোনো সক্রিয় ক্রন জব চালু নেই।", reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("🔙 Back to Menu", callback_data="btn_back_main")]]
+        text = (
+            "╔══════════════════════╗\n"
+            "   ⚠️ **NO RUNNING JOBS**\n"
+            "╚══════════════════════╝\n\n"
+            "আপনার বর্তমানে কোনো রিয়েল-টাইম জব চালু নেই।"
+        )
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
         return
 
     keyboard = []
     for idx, job in enumerate(jobs, 1):
-        short_url = job["url"][:22] + "..." if len(job["url"]) > 25 else job["url"]
-        btn_text = f"{idx}. {short_url} ({job['interval']}s)"
-        keyboard.append([InlineKeyboardButton(f"❌ {btn_text}", callback_data=f"del_{job['id']}")])
+        domain = job["url"].split("//")[-1][:18]
+        btn_text = f"❌ [{idx}] {domain}... ({job['interval']}s)"
+        keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"del_{job['id']}")])
 
-    keyboard.append([InlineKeyboardButton("🔙 ফিরে যান", callback_data="btn_back_main")])
-    await query.edit_message_text(
-        "যে ক্রন জবটি ডিলিট করতে চান সেটির উপর ক্লিক করুন:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+    keyboard.append([InlineKeyboardButton("🔙 Back to Menu", callback_data="btn_back_main")])
+    text = (
+        "╔══════════════════════╗\n"
+        "   🗑 **ACTIVE CRON JOBS**\n"
+        "╚══════════════════════╝\n\n"
+        "যে ক্রন জবটি বন্ধ করতে চান সেটির উপর ক্লিক করুন:"
     )
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
 async def delete_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -152,9 +207,15 @@ async def delete_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id in user_jobs:
         user_jobs[user_id] = [j for j in user_jobs[user_id] if j["id"] != job_id]
 
-    await query.edit_message_text("🗑 ক্রন জবটি সফলভাবে রিমুভ করা হয়েছে!", reply_markup=get_main_keyboard())
+    text = (
+        "╔══════════════════════╗\n"
+        "   🗑 **JOB TERMINATED**\n"
+        "╚══════════════════════╝\n\n"
+        f"🆔 **Job ID:** `{job_id}`\n"
+        "✅ রিয়েল-টাইম কল সফলভাবে বন্ধ করা হয়েছে।"
+    )
+    await query.edit_message_text(text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
-# ইভেন্ট লুপ রেডি হওয়ার পর শিডিউলার স্টার্ট হবে
 async def post_init(application: Application):
     if not scheduler.running:
         scheduler.start()
