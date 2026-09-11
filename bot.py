@@ -1,3 +1,4 @@
+import os
 import asyncio
 import uuid
 import aiohttp
@@ -13,29 +14,22 @@ from telegram.ext import (
     filters,
 )
 
-# আপনার বটের টোকেন
-BOT_TOKEN = "8949748635:AAEd7NKUfclKij86C_qHiLz4bCbRrbRrFAI"
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8949748635:AAEd7NKUfclKij86C_qHiLz4bCbRrbRrFAI")
 
-# স্টেট নির্ধারণ
 WAITING_FOR_URL = 1
 
-# ব্যাকগ্রাউন্ড শিডিউলার
+# শিডিউলার ইনিশিয়ালাইজ (এখনই start হবে না)
 scheduler = AsyncIOScheduler()
-scheduler.start()
-
-# ব্যবহারকারীদের ক্রন জবের তথ্য সংরক্ষণের ডিকশনারি
 user_jobs = {}
 
-# ব্যাকগ্রাউন্ডে লিঙ্ক হিট/ভিউ করার ফাংশন
 async def ping_url(url: str):
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=10) as response:
+            async with session.get(url, timeout=10):
                 pass
     except Exception:
         pass
 
-# মেইন মেনু বাটন
 def get_main_keyboard():
     keyboard = [
         [
@@ -45,7 +39,6 @@ def get_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# /start কমান্ড
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = "স্বাগতম! ক্রন জব পরিচালনা করতে নিচের যেকোনো একটি বাটন বেছে নিন:"
     if update.message:
@@ -54,14 +47,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.message.edit_text(text, reply_markup=get_main_keyboard())
     return ConversationHandler.END
 
-# 'Add Cron Job' হ্যান্ডলার
 async def add_job_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text("অনুগ্রহ করে যে লিংকটি ভিউ করতে চান সেটি পাঠান (যেমন: https://example.com):")
     return WAITING_FOR_URL
 
-# লিংক গ্রহণ ও সময় নির্বাচনের বাটন তৈরি
 async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     if not (url.startswith("http://") or url.startswith("https://")):
@@ -70,7 +61,6 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data["target_url"] = url
 
-    # নির্দিষ্ট সময়ের ইন্টারভাল বাটন
     intervals = [1, 2, 3, 5, 10, 15, 20, 30, 45, 60, 90, 100]
     keyboard = []
     row = []
@@ -90,7 +80,6 @@ async def receive_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     return ConversationHandler.END
 
-# সময় নির্বাচন ও জব চালু
 async def set_interval_and_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -105,7 +94,6 @@ async def set_interval_and_start(update: Update, context: ContextTypes.DEFAULT_T
 
     job_id = f"job_{uuid.uuid4().hex[:8]}"
 
-    # ব্যাকগ্রাউন্ড শিডিউলারে যোগ করা
     scheduler.add_job(
         ping_url,
         "interval",
@@ -127,7 +115,6 @@ async def set_interval_and_start(update: Update, context: ContextTypes.DEFAULT_T
     )
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
-# 'Remove Cron Job' মেনু প্রদর্শন
 async def remove_job_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -151,7 +138,6 @@ async def remove_job_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
-# ক্রন জব মুছে ফেলা
 async def delete_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -168,9 +154,18 @@ async def delete_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text("🗑 ক্রন জবটি সফলভাবে রিমুভ করা হয়েছে!", reply_markup=get_main_keyboard())
 
-# প্রধান অ্যাপ রানার
+# ইভেন্ট লুপ রেডি হওয়ার পর শিডিউলার স্টার্ট হবে
+async def post_init(application: Application):
+    if not scheduler.running:
+        scheduler.start()
+
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .post_init(post_init)
+        .build()
+    )
 
     conv_handler = ConversationHandler(
         entry_points=[CallbackQueryHandler(add_job_start, pattern="^btn_add_job$")],
